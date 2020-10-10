@@ -748,12 +748,14 @@ void KeyPad(void)
 					break;
 				case cls:
 					Status.motor ^= 1;
-					if(Status.motor == 0)	{	if(Status.Online)
-												{
-													HAL_UART_Transmit(&huart1,(uint8_t*) "D", 1, 20);
-													PID.time = 0;
-												}
-											}
+					if(Status.motor == 0)
+					{
+						if(Status.Online)
+						{
+							HAL_UART_Transmit(&huart1,(uint8_t*) "D", 1, 20);
+							PID.time = 0;
+						}
+					}
 					TickStart = HAL_GetTick();
 					break;
 			}
