@@ -82,6 +82,7 @@ struct Status
 	uint8_t Get_Num	: 1;
 	uint8_t get_data: 1;
 	uint8_t Online	: 1;
+	uint8_t exe		: 1;
 }Status;
 
 struct PID{
@@ -122,6 +123,7 @@ void Process_UART_Data(char* Data);
 char GET_KEY(void);
 void Matlab(void);
 void KeyPad(void);
+void WinApp(void);
 void Volume(void);
 void Verify_Unique(void);
 void PID_setting(void);
@@ -157,10 +159,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		UsartNewDataLineCount=UsartRXBufferCount;
 		UsartRXBufferCount=0;
 	}
-	else
-	{
-		HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
-	}
+
+	HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 }
 /* USER CODE END PFP */
 
@@ -176,10 +176,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	uint8_t Num;
-	Status.matlab=0;
-	Status.Online=0;
-	Status.get_data=0;
+	int8_t Num;
+	Status.matlab = 0;
+	Status.Online = 0;
+	Status.exe = 0;
+	Status.get_data = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -207,6 +208,7 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_USART1_UART_Init();
+  HAL_Delay(500);
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim2);
@@ -216,7 +218,7 @@ int main(void)
   lcd_init();
   lcd_hide_cursor();
   startup();
-  //Verify_Unique();
+  Verify_Unique();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -227,33 +229,27 @@ int main(void)
 
   while (1)
   {
-
-	if(NewDataLineCount != 0)
-	{
-	  Process_UART_Data(RXBuffer);
-	}
-
-	if((Num > 0 && Num <=5 ) || Num == 20)
+	if((Num >= 0 && Num <= 9 ) || Num == 20)
 	{
 			lcd_clear();
 			Status.whiles=1;
 				 if(Num == 2)	Matlab();
 			else if(Num == 3)	KeyPad();
-			else if(Num == 4)	Volume();
-			else if(Num == 5)	WiFi_Setting();
+			else if(Num == 8)	Volume();
+			else if(Num == 4)	WinApp();
+			else if(Num == 0)	WiFi_Setting();
 			else if(Num == 1)
 			{
 				Status.Online = 1;
 				HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 				KeyPad();
 			}
-
-
 			lcd_clear();
 			lcd_puts_XY(0,0,"1> Online");
 			lcd_puts_XY(0,1,"2> Matlab");
 			lcd_puts_XY(0,2,"3> Micro Controller");
-			lcd_puts_XY(0,3,"4> Manual adjustment");
+			lcd_puts_XY(0,3,"4> Windows app");
+			//lcd_puts_XY(0,3,"8> Manual adjustment");
 
 	}
 	Num = GET_KEY();
@@ -506,6 +502,8 @@ void startup(void)
 void Process_UART_Data(char* Data)
 {
 	char buffer[20];
+	float p,i,d;
+	int sp,time;
 	NewDataLineCount=0;
 
 	if(strstr(Data,"Angle?")!=0)
@@ -525,22 +523,37 @@ void Process_UART_Data(char* Data)
 		uint16_t track = atoi(strstr(Data,"PWM:")+4);
 		__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,track);
 	}
+	else
+	{
+		int x = sscanf(USARTbuffer,"kp%fki%fkd%fsp%dtime%d",&p,&i,&d,&sp,&time);
+		if(x == 5)
+		{
+			PID.Kp = p;
+			PID.Ki = i;
+			PID.Kd = d;
+			PID.SetPoint = sp;
+
+			if(time == 555) Status.motor = 1;
+			if(time == 444)
+				{
+					Status.motor = 0;
+					__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
+				}
+		}
+	}
 }
 /*****************************************************************************************************************
  ***********************************************                **************************************************
  ***********************************************  VerifyUnique  **************************************************
  ***********************************************                **************************************************
  *****************************************************************************************************************/
-
-
-
 void Verify_Unique(void)
 {
 	uint8_t i;
 	uint8_t ERROR[13] = {75,111,115,32,78,97,78,97,116,32,58,41,0};
 
 	uint32_t unique_id1[3] = {0X44EDD34, 0X350E3756, 0X2202021E};
-	uint32_t unique_id2[3] = {0x2232203, 0xfd2a18f7, 0x21013534};
+	uint32_t unique_id2[3] = {0x21A2203, 0xfd2a18f7, 0x21013535};
 
 
 /********************** GET ID **********************/
@@ -792,13 +805,12 @@ void KeyPad(void)
 			if(Status.Online)
 			{
 				angle_send[i] = (int16_t)Angle;
-				time_send[i] = HAL_GetTick()-online_time;
+				time_send[i] = HAL_GetTick() - online_time;
 
 				if(time_send[i] >= PID.time*1000)
 				{
 					Status.motor = 0;
 					PID.time = 0;
-					HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 				}
 
 				i++;
@@ -866,6 +878,122 @@ void KeyPad(void)
 
 	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
 	Status.motor=0;Status.Online=0;
+}
+/****************************************************************************************************************
+ ***********************************************               **************************************************
+ ***********************************************  Windows app  **************************************************
+ ***********************************************               **************************************************
+ ****************************************************************************************************************/
+void WinApp(void)
+{
+	double Error=0, Previous_error=0;
+	double p_term=0, d_term=0, i_term=0, dt=0;
+
+	int16_t Value=0, PWM=0, Angle=0;
+	uint32_t timePrev, TickStart = HAL_GetTick();
+	uint16_t darsad,time;
+
+	char Num, Prev_Num=ok;
+	uint8_t Buffer[21];
+
+	Status.motor = 0;
+	throttle =  Max_Throttle - Min_Throttle;
+
+	while(Status.whiles)
+	{
+		Num = GET_KEY();
+		if(Num != Prev_Num)
+		{
+			switch (Num)
+			{
+				case exit:
+					Status.whiles=0;
+					break;
+				case 0:
+					TIM2->CNT = 0;
+					break;
+				case up:
+					break;
+				case down:
+					break;
+				case ok:
+					break;
+				case cls:
+					Status.motor = 0;
+					break;
+			}
+			if(Num == ok)	Prev_Num = exit;
+			else Prev_Num = Num;
+		}
+
+	    Angle = ((int16_t)TIM2->CNT)/4;
+
+
+		if(NewDataLineCount != 0)
+		{
+		  Process_UART_Data(RXBuffer);
+		}
+
+		if(Status.motor)
+		{
+		    timePrev	=	TickStart;
+		    TickStart	=	HAL_GetTick();
+		    //dt		= 	((float)(TickStart - timePrev) / 1000.00);
+		    dt 			= 	TickStart - timePrev;
+		    time += dt;
+		    dt /= 1000.00;
+
+			Error		=	PID.SetPoint - Angle;
+
+			p_term = PID.Kp * Error;
+
+			i_term		=	(PID.Ki * (Error + Previous_error) * dt / 2) + i_term ;
+			if(i_term > throttle) i_term = throttle;
+			if(i_term <-throttle) i_term = -throttle;
+
+            /*N 			=	(1.0 / dt) * 0.9 ;
+            filter		+=	dt * d_term;
+            d_term 		= 	(PID.Kd * Error - filter) * N;*/
+
+			d_term = (Error - Previous_error) / dt * PID.Kd;
+            if(d_term > throttle)	d_term = throttle;
+            if(d_term <-throttle)	d_term = -throttle;
+
+			PWM			=	(int16_t)(p_term + i_term + d_term);
+
+			if (PWM > throttle)	PWM = throttle;
+			if (PWM < 0)		PWM = 0;
+
+			Value = PWM + Min_Throttle;
+			if(Status.motor)__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Value);
+
+			sprintf((char*)Buffer, "data,%d,%d",Angle,time);
+			Log((char*)Buffer);
+			Previous_error = Error;
+		}
+
+		if(Status.motor) {lcd_puts_XY(11,3,"Motor ON ");}
+		else
+		{
+			lcd_puts_XY(11,3,"Motor OFF");
+			Value = Min_Real_Throttle;
+			i_term = 0;d_term=0;
+		}
+		sprintf((char*)Buffer,"SP= %03d    PV= %03d ",PID.SetPoint,Angle);
+		lcd_puts_XY(0,0,(char*)Buffer);
+
+		darsad = (((Value-Min_Real_Throttle)*100)/(Max_Real_Throttle - Min_Real_Throttle));
+		sprintf((char*)Buffer,"P=%07.3f  Puls=%%%03d",PID.Kp,darsad);
+		lcd_puts_XY(0,1,(char*)Buffer);
+
+		sprintf((char*)Buffer,"I=%07.3f",PID.Ki);
+		lcd_puts_XY(0,2,(char*)Buffer);
+		sprintf((char*)Buffer,"D=%07.3f",PID.Kd);
+		lcd_puts_XY(0,3,(char*)Buffer);
+	}
+
+	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
+	Status.motor=0;
 }
 /****************************************************************************************************************
  ***********************************************               **************************************************
@@ -1140,53 +1268,35 @@ void Get_Number (char *NUMBER)
  ****************************************************************************************************************/
 void USART_Process_Data(void)
 {
-	char* x;
-	uint8_t check_Get=0;
+	float p,i,d;
+	int sp,time;
 
-	x = strstr(USARTbuffer,"kp");
-	if(x)
-	{
-		PID.Kp = atof(x+2);
-		check_Get += 1;
-	}
-	x = strstr(USARTbuffer,"ki");
-	if(x)
-	{
-		PID.Ki = atof(x+2);
-		check_Get += 1;
-	}
-	x = strstr(USARTbuffer,"kd");
-	if(x)
-	{
-		PID.Kd = atof(x+2);
-		check_Get += 1;
-	}
-	x = strstr(USARTbuffer,"sp");
-	if(x)
-	{
-		PID.SetPoint=atof(x+2);
-		check_Get += 1;
-	}
-	x = strstr(USARTbuffer,"time");
-	if(x)
-	{
-		PID.time=atoi(x+4);
-		check_Get += 1;
-	}
+	int z = sscanf(USARTbuffer,"kp%fki%fkd%fsp%dtime%d",&p,&i,&d,&sp,&time);
 
-	if(check_Get==5)
+	if(z == 5)
 	{
-		check_Get=0;
+		PID.Kp = p;
+		PID.Ki = i;
+		PID.Kd = d;
+		PID.SetPoint = sp;
+
+		if(time == 555) Status.motor = 1;
+		if(time == 444) Status.motor = 0;
+		if(time > 60) time = 60;
+		PID.time = time;
+
 		Status.get_data=0;
-		HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
-		HAL_Delay(20);
-		HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
-		HAL_Delay(20);
-		HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
-		HAL_Delay(20);
-		HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
+		if(Status.Online)
+		{
+			HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
+			HAL_Delay(20);
+			HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
+			HAL_Delay(20);
+			HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
+			HAL_Delay(20);
+			HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
+		}
 	}
-	else HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 
 	UsartNewDataLineCount=0;
 }
