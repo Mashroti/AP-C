@@ -122,7 +122,6 @@ void Process_UART_Data(char* Data);
 char GET_KEY(void);
 void Matlab(void);
 void KeyPad(void);
-void WinApp(void);
 void Volume(void);
 void Verify_Unique(void);
 void PID_setting(void);
@@ -158,8 +157,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		UsartNewDataLineCount=UsartRXBufferCount;
 		UsartRXBufferCount=0;
 	}
-
-	HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
+	else
+	{
+		HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
+	}
 }
 /* USER CODE END PFP */
 
@@ -233,9 +234,13 @@ int main(void)
 			Status.whiles=1;
 				 if(Num == 2)	Matlab();
 			else if(Num == 3)	KeyPad();
-			else if(Num == 8)	Volume();
-			else if(Num == 4)	WinApp();
+			else if(Num == 9)	Volume();
 			else if(Num == 0)	WiFi_Setting();
+			else if(Num == 4)
+			{
+				Status.exe = 1;
+				KeyPad();
+			}
 			else if(Num == 1)
 			{
 				Status.Online = 1;
@@ -552,9 +557,8 @@ void Verify_Unique(void)
 	uint8_t ERROR[13] = {75,111,115,32,78,97,78,97,116,32,58,41,0};
 
 	uint32_t unique_id1[3] = {0X44EDD34, 0X350E3756, 0X2202021E};
-	uint32_t unique_id2[3] = {0x21A2203, 0xfd2a18f7, 0x21013535};
-
-
+	uint32_t unique_id2[3] = {0x2232203, 0xfd2a18f7, 0x21013534};
+	//uint32_t unique_id2[3] = {0x21A2203, 0xfd2a18f7, 0x21013535};
 /********************** GET ID **********************/
 /*
 	uint32_t unique_id[3];
@@ -724,7 +728,7 @@ void KeyPad(void)
 
 	int16_t Value=0, PWM=0, Angle=0;
 	uint32_t online_time,timePrev, TickStart = HAL_GetTick();
-	uint16_t darsad;
+	uint16_t darsad, exe_time,exe_tickstart;
 
 	char Num, Prev_Num=ok;
 	uint8_t Buffer[21],i;
@@ -762,9 +766,12 @@ void KeyPad(void)
 					Status.motor ^= 1;
 					if(Status.motor == 0)
 					{
+						i_term=0;d_term=0;
+						__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
 						if(Status.Online)
 						{
 							HAL_UART_Transmit(&huart1,(uint8_t*) "D", 1, 20);
+							HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 							PID.time = 0;
 						}
 					}
@@ -776,6 +783,18 @@ void KeyPad(void)
 		}
 
 	    Angle = ((int16_t)TIM2->CNT)/4;
+
+	    if(Status.exe)
+	    {
+			if(NewDataLineCount != 0)
+			{
+			  Process_UART_Data(RXBuffer);
+			  i_term = 0;
+			  exe_time = 0;
+			  TickStart = HAL_GetTick();
+			  exe_tickstart = HAL_GetTick();
+			}
+	    }
 
 		if(Status.Online)
 		{
@@ -800,6 +819,12 @@ void KeyPad(void)
 
 			Error		=	PID.SetPoint - Angle;
 
+			if(Status.exe)
+			{
+				exe_time = HAL_GetTick() - exe_tickstart;
+				sprintf((char*)Buffer,"data,%d,%d\r\n",Angle,exe_time);
+				Log((char*)Buffer);
+			}
 
 			if(Status.Online)
 			{
@@ -808,6 +833,7 @@ void KeyPad(void)
 
 				if(time_send[i] >= PID.time*1000)
 				{
+					HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
 					Status.motor = 0;
 					PID.time = 0;
 				}
@@ -826,9 +852,6 @@ void KeyPad(void)
 				}
 			}
 
-
-
-
 			p_term = PID.Kp * Error;
 
 			i_term		=	(PID.Ki * (Error + Previous_error) * dt / 2) + i_term ;
@@ -849,7 +872,7 @@ void KeyPad(void)
 			if (PWM < 0)		PWM = 0;
 
 			Value = PWM + Min_Throttle;
-			if(Status.motor)__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Value);
+			__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Value);
 
 			Previous_error = Error;
 		}
@@ -860,7 +883,7 @@ void KeyPad(void)
 			lcd_puts_XY(11,3,"Motor OFF");
 			Value = Min_Real_Throttle;
 			i_term = 0;d_term=0;
-			__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
+			if(Status.Online)__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
 		}
 		sprintf((char*)Buffer,"SP= %03d    PV= %03d ",PID.SetPoint,Angle);
 		lcd_puts_XY(0,0,(char*)Buffer);
@@ -877,124 +900,6 @@ void KeyPad(void)
 
 	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
 	Status.motor=0;Status.Online=0;
-}
-/****************************************************************************************************************
- ***********************************************               **************************************************
- ***********************************************  Windows app  **************************************************
- ***********************************************               **************************************************
- ****************************************************************************************************************/
-void WinApp(void)
-{
-	double Error=0, Previous_error=0;
-	double p_term=0, d_term=0, i_term=0, dt=0;
-
-	int16_t Value=0, PWM=0, Angle=0;
-	uint32_t timePrev, TickStart = HAL_GetTick();
-	uint16_t darsad,time;
-
-	char Num, Prev_Num=ok;
-	uint8_t Buffer[21];
-
-	Status.motor = 0;
-	throttle =  Max_Throttle - Min_Throttle;
-
-	while(Status.whiles)
-	{
-		Num = GET_KEY();
-		if(Num != Prev_Num)
-		{
-			switch (Num)
-			{
-				case exit:
-					Status.whiles=0;
-					break;
-				case 0:
-					TIM2->CNT = 0;
-					break;
-				case up:
-					break;
-				case down:
-					break;
-				case ok:
-					break;
-				case cls:
-					Status.motor = 0;
-					break;
-			}
-			if(Num == ok)	Prev_Num = exit;
-			else Prev_Num = Num;
-		}
-
-	    Angle = ((int16_t)TIM2->CNT)/4;
-
-
-		if(NewDataLineCount != 0)
-		{
-		  Process_UART_Data(RXBuffer);
-		  i_term = 0;
-		  time = 0;
-		}
-
-		if(Status.motor)
-		{
-		    timePrev	=	TickStart;
-		    TickStart	=	HAL_GetTick();
-		    //dt		= 	((float)(TickStart - timePrev) / 1000.00);
-		    dt 			= 	TickStart - timePrev;
-		    time += dt;
-		    dt /= 1000.00;
-
-			Error		=	PID.SetPoint - Angle;
-
-			p_term = PID.Kp * Error;
-
-			i_term		=	(PID.Ki * (Error + Previous_error) * dt / 2) + i_term ;
-			if(i_term > throttle) i_term = throttle;
-			if(i_term <-throttle) i_term = -throttle;
-
-            /*N 			=	(1.0 / dt) * 0.9 ;
-            filter		+=	dt * d_term;
-            d_term 		= 	(PID.Kd * Error - filter) * N;*/
-
-			d_term = (Error - Previous_error) / dt * PID.Kd;
-            if(d_term > throttle)	d_term = throttle;
-            if(d_term <-throttle)	d_term = -throttle;
-
-			PWM			=	(int16_t)(p_term + i_term + d_term);
-
-			if (PWM > throttle)	PWM = throttle;
-			if (PWM < 0)		PWM = 0;
-
-			Value = PWM + Min_Throttle;
-			if(Status.motor)__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Value);
-
-			sprintf((char*)Buffer, "data,%d,%d\r\n",Angle,time);
-			Log((char*)Buffer);
-			Previous_error = Error;
-		}
-
-		if(Status.motor) {lcd_puts_XY(11,3,"Motor ON ");}
-		else
-		{
-			lcd_puts_XY(11,3,"Motor OFF");
-			Value = Min_Real_Throttle;
-			i_term = 0;d_term=0;
-		}
-		sprintf((char*)Buffer,"SP= %03d    PV= %03d ",PID.SetPoint,Angle);
-		lcd_puts_XY(0,0,(char*)Buffer);
-
-		darsad = (((Value-Min_Real_Throttle)*100)/(Max_Real_Throttle - Min_Real_Throttle));
-		sprintf((char*)Buffer,"P=%07.3f  Puls=%%%03d",PID.Kp,darsad);
-		lcd_puts_XY(0,1,(char*)Buffer);
-
-		sprintf((char*)Buffer,"I=%07.3f",PID.Ki);
-		lcd_puts_XY(0,2,(char*)Buffer);
-		sprintf((char*)Buffer,"D=%07.3f",PID.Kd);
-		lcd_puts_XY(0,3,(char*)Buffer);
-	}
-
-	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
-	Status.motor=0;
 }
 /****************************************************************************************************************
  ***********************************************               **************************************************
@@ -1272,7 +1177,7 @@ void USART_Process_Data(void)
 	float p,i,d;
 	int sp,time;
 
-	int z = sscanf(USARTbuffer,"kp%fki%fkd%fsp%dtime%d",&p,&i,&d,&sp,&time);
+	int z = sscanf(USARTbuffer,"kp%fki%fkd%ftime%dsp%d", &p, &i, &d, &time, &sp);
 
 	if(z == 5)
 	{
@@ -1298,6 +1203,10 @@ void USART_Process_Data(void)
 			HAL_UART_Transmit(&huart1,(uint8_t*) "Y", 1, 20);
 		}
 	}
+	else
+	{
+		HAL_UART_Receive_IT(&huart1,&NewDataInt,1);
+	}
 
 	UsartNewDataLineCount=0;
 }
@@ -1316,12 +1225,13 @@ void WiFi_Setting(void)
 	lcd_puts_XY(0,2,"And Type in browser:");
 	lcd_puts_XY(1,3,">> 192.168.4.1 <<");
 
-	HAL_GPIO_WritePin(Trigger_GPIO_Port, Trigger_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(Reset_GPIO_Port, Reset_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Trigger_GPIO_Port, 	Trigger_Pin, 	GPIO_PIN_SET);
 	HAL_Delay(250);
-	HAL_GPIO_WritePin(Reset_GPIO_Port, Reset_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Reset_GPIO_Port, 		Reset_Pin, 		GPIO_PIN_SET);
+	HAL_Delay(250);
+	HAL_GPIO_WritePin(Reset_GPIO_Port, 		Reset_Pin, 		GPIO_PIN_RESET);
 	HAL_Delay(2000);
-	HAL_GPIO_WritePin(Trigger_GPIO_Port, Trigger_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Trigger_GPIO_Port, 	Trigger_Pin, 	GPIO_PIN_RESET);
 
 	while(Status.whiles)
 	{
