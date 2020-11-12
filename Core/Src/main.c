@@ -250,7 +250,7 @@ int main(void)
 			lcd_clear();
 			lcd_puts_XY(0,0,"1> Online");
 			lcd_puts_XY(0,1,"2> Matlab");
-			lcd_puts_XY(0,2,"3> Micro Controller");
+			lcd_puts_XY(0,2,"3> Offline");
 			lcd_puts_XY(0,3,"4> Windows app");
 			//lcd_puts_XY(0,3,"8> Manual adjustment");
 
@@ -635,7 +635,9 @@ char GET_KEY(void)
 void Matlab(void)
 {
 	int16_t Angle, pwm, darsad;
+	uint32_t time = HAL_GetTick();
 	uint8_t Buffer[21];
+
 
 	char Num, Prev_Num;
 	union u_type{
@@ -678,8 +680,11 @@ void Matlab(void)
 				if(Status.motor) __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,pwm);
 			}
 
+			time = HAL_GetTick();
 			NewDataLineCount = 0;		//clear flag
 		}
+
+		if(HAL_GetTick() - time < 2000)	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,Min_Real_Throttle);
 
 		sprintf((char*)Buffer,"Angle= %d  ",(int8_t)Angle);
 		lcd_puts_XY(0,0,(char*)Buffer);

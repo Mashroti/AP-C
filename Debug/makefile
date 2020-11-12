@@ -53,8 +53,8 @@ AeroPendulum_CDC.bin \
 all: AeroPendulum_CDC.elf secondary-outputs
 
 # Tool invocations
-AeroPendulum_CDC.elf: $(OBJS) $(USER_OBJS) C:\Users\Mashroti\STM32CubeIDE\workspace_1.4.0\AeroPendulum_CDC\AP-C\STM32F103C8TX_FLASH.ld
-	arm-none-eabi-gcc -o "AeroPendulum_CDC.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"C:\Users\Mashroti\STM32CubeIDE\workspace_1.4.0\AeroPendulum_CDC\AP-C\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AeroPendulum_CDC.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
+AeroPendulum_CDC.elf: $(OBJS) $(USER_OBJS) D:\Code\GitHub\AP-C\STM32F103C8TX_FLASH.ld
+	arm-none-eabi-gcc -o "AeroPendulum_CDC.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"D:\Code\GitHub\AP-C\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AeroPendulum_CDC.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
